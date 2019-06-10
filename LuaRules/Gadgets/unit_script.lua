@@ -119,6 +119,13 @@ local sp_GetUnitWeaponState = Spring.GetUnitWeaponState
 local sp_SetUnitWeaponState = Spring.SetUnitWeaponState
 local sp_SetUnitShieldState = Spring.SetUnitShieldState
 
+local spGetUnitWeaponTarget = Spring.GetUnitWeaponTarget
+local spGetUnitCurrentCommand = Spring.GetUnitCurrentCommand
+local spGiveOrderToUnit = Spring.GiveOrderToUnit
+local CMD_ATTACK = CMD.ATTACK
+local CMD_REMOVE = CMD.REMOVE
+local CMD_OPT_META = CMD.OPT_META
+
 -- Keep local reference to engine's CallAsUnit/WaitForMove/WaitForTurn,
 -- as we overwrite them with (safer) framework version later on.
 local sp_CallAsUnit  = Spring.UnitScript.CallAsUnit
@@ -634,6 +641,40 @@ local function Wrap_AimWeapon(unitID, callins)
 
 	callins["AimWeapon"] = function(weaponNum, heading, pitch)
 		return StartThread(AimWeaponThread, weaponNum, heading, pitch)
+	end
+end
+
+local TARGET_UNIT = 1
+local TARGET_POS = 2
+local function Wrap_EndBurst(unitID, callins)
+	local EndBurst = callins.EndBurst
+	if not EndBurst then
+		return
+	end
+
+	local function EndBurstThread(weaponNum)
+		EndBurst(weaponNum)
+
+		local targetType, isUserTarget, targetID = spGetUnitWeaponTarget(unitID, weaponNum)
+		if not isUserTarget then
+			return
+		end
+
+		local cmdID, cmdOpt, cmdTag, cmdParam1, cmdParam2, cmdParam3 = spGetUnitCurrentCommand(unitID)
+		if cmdID ~= CMD_ATTACK or floor(cmdOpt / CMD_OPT_META) % 2 == 0 then
+			return
+		end
+
+		if  (targetType ~= TARGET_UNIT or cmdParam2 or cmdParam1 ~= targetID)
+		and (targetType ~= TARGET_POS  or cmdParam4 or cmdParam1 ~= targetID[1] or cmdParam2 ~= targetID[2] or cmdParam3 ~= targetID[3]) then
+			return
+		end
+
+		spGiveOrderToUnit(unitID, CMD_REMOVE, {cmdTag}, 0)
+	end
+
+	callins.EndBurst = function(weaponNum)
+		return StartThread(EndBurstThread, weaponNum)
 	end
 end
 
